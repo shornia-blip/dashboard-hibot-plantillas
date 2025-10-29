@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard de Plantillas WhatsApp</title>
+    
+    <!-- 1. Importar Chart.js y plugin de etiquetas -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+
+    <!-- 2. Importar nueva tipografía (Inter) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        /* --- ESTILOS MODO OSCURO --- */
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #111827; 
+            color: #f9fafb; 
+            margin: 0;
+            padding: 20px;
+        }
+        h1, h3 {
+            color: #ffffff;
+            font-weight: 600;
+        }
+        h1 {
+            text-align: center;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 20px;
+            max-width: 1400px;
+            margin: 20px auto;
+        }
+        
+        /* --- Tarjetas de Estadísticas --- */
+        .stats-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+        }
+        .stat-card {
+            background-color: #1f2937;
+            border-radius: 8px;
+            padding: 25px;
+            border: 1px solid #374151;
+        }
+        .stat-card h3 {
+            margin-top: 0;
+            font-size: 1.1rem;
+            color: #9ca3af; 
+        }
+        .stat-card .value {
+            font-size: 2.25rem;
+            font-weight: 700;
+            color: #ffffff;
+        }
+        .stat-card .percentage {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+        .color-in { color: #d1d5db; } 
+        .color-out { color: #0d1bd4; } 
+        /* ---------------------------------- */
+
+        .chart-box {
+            background-color: #1f2937; 
+            border-radius: 8px;
+            padding: 20px;
+            border: 1px solid #374151; 
+            position: relative;
+            grid-column: 1 / -1; 
+            overflow: hidden; 
+        }
+        
+        /* Estilos de la tabla */
+        .table-container {
+            background-color: #1f2937; 
+            border-radius: 8px;
+            padding: 20px;
+            border: 1px solid #374151; 
+            grid-column: 1 / -1; 
+            overflow-x: auto; 
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        th, td {
+            border: 1px solid #374151; 
+            padding: 10px;
+            text-align: left;
+        }
+        th {
+            background-color: #374151; 
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            color: #d1d5db; 
+        }
+        td { color: #d1d5db; }
+        .limite-ok {
+            background-color: #064e3b; 
+            color: #a7f3d0; 
+            font-weight: bold;
+            text-align: center;
+        }
+        .limite-alerta {
+            background-color: #7f1d1d; 
+            color: #fecaca; 
+            font-weight: bold;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Dashboard de Uso de Plantillas (HIBOT)</h1>
+
+    <div class="container">
+        
+        <div class="stats-container" id="stats-acumuladas">
+            <!-- El contenido se generará con JavaScript -->
+        </div>
+        
+        <!-- Gráfico de Barras 2D -->
+        <div class="chart-box" id="chart-box-diario">
+            <h3>Uso Diario (Conversaciones OUT)</h3>
+            <canvas id="graficoDiario"></canvas>
+        </div>
+        
+        <div class="table-container">
+            <h3>Desglose por Agente (Conversaciones 'OUT' - 30 días)</h3>
+            <div id="tablaAgentes">
+                <p>Cargando datos de agentes...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Script principal de la aplicación -->
+    <script>
+        // --- Constantes de Colores ---
+        const COLOR_AGENTE = '#0d1bd4'; 
+        const COLOR_CLIENTE_TEXT = '#d1d5db';
+        const COLOR_AGENTE_TEXT = '#0d1bd4'; 
+        
+        // --- Configuración global de Chart.js ---
+        Chart.defaults.color = '#e5e7eb'; 
+        Chart.defaults.borderColor = '#374151'; 
+        Chart.register(ChartDataLabels); // Registrar plugin
+
+        let chartDiarioInstance = null;
+        // let dashboardData = null; // Ya no es necesario
+
+        async function cargarDatos() {
+            try {
+                const response = await fetch('http://127.0.0.1:5001/api/datos');
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`No se pudieron cargar los datos del backend. Servidor dice: ${errorText}`);
+                }
+                const data = await response.json();
+                
+                // dashboardData = data; // Ya no es necesario
+                console.log("Datos recibidos del backend:", data);
+
+                if (data.direccion_data) {
+                    renderizarStatsAcumuladas(data.direccion_data.acumulado);
+                    renderizarGraficoDiario(data.direccion_data.diario); // Restaurado
+                }
+
+                if (data.agente_data) {
+                    renderizarTablaAgentes(data.agente_data);
+                }
+
+            } catch (error)
+ {
+                console.error('Error al cargar el dashboard:', error);
+                document.body.innerHTML = `<h1>Error al cargar datos: ${error.message}</h1><p>Asegúrate de que el script de Python (app.py) se esté ejecutando y no tenga errores. Revisa la consola del backend y la consola del navegador (F12).</p>`;
+            }
+        }
+        
+        // --- Tarjetas de Estadísticas ---
+        function renderizarStatsAcumuladas(data) {
+            const container = document.getElementById('stats-acumuladas');
+            const total = data.conteo.reduce((a, b) => a + b, 0);
+            
+            const idxCliente = data.plantillas.indexOf('Iniciadas por Cliente (IN)');
+            const idxAgente = data.plantillas.indexOf('Iniciadas por Agente/Plantilla (OUT)');
+            
+            const conteoCliente = data.conteo[idxCliente] || 0;
+            const conteoAgente = data.conteo[idxAgente] || 0;
+            
+            const porcCliente = total > 0 ? ((conteoCliente / total) * 100).toFixed(1) : 0;
+            const porcAgente = total > 0 ? ((conteoAgente / total) * 100).toFixed(1) : 0;
+
+            container.innerHTML = `
+                <div class="stat-card">
+                    <h3>Conversaciones (IN)</h3>
+                    <span class="value">${conteoCliente.toLocaleString('es-ES')}</span>
+                    <span class="percentage color-in">(${porcCliente}%)</span>
+                </div>
+                <div class="stat-card">
+                    <h3>Conversaciones (OUT)</h3>
+                    <span class="value">${conteoAgente.toLocaleString('es-ES')}</span>
+                    <span class.="percentage color-out">(${porcAgente}%)</span>
+                </div>
+            `;
+        }
+
+        // --- Gráfico de Barras 2D (Restaurado) ---
+        function renderizarGraficoDiario(data) {
+            const ctx = document.getElementById('graficoDiario').getContext('2d');
+            if (chartDiarioInstance) {
+                chartDiarioInstance.destroy();
+            }
+            const datasets = {};
+            const plantillaOUT = 'Iniciadas por Agente/Plantilla (OUT)';
+            datasets[plantillaOUT] = {
+                label: 'Conversaciones OUT',
+                data: [],
+                backgroundColor: COLOR_AGENTE, 
+            };
+            data.fechas.forEach(fecha => {
+                const conteo = data.datos[fecha]?.[plantillaOUT] || 0; 
+                datasets[plantillaOUT].data.push(conteo);
+            });
+
+            chartDiarioInstance = new Chart(ctx, {
+                type: 'bar', 
+                data: {
+                    labels: data.fechas, // Fechas (ej. 29/10)
+                    datasets: Object.values(datasets) 
+                },
+                plugins: [ChartDataLabels],
+                options: {
+                    responsive: true,
+                    // --- ¡CORRECCIÓN DEFINITIVA! ---
+                    aspectRatio: 3,
+                    maintainAspectRatio: true, 
+                    // ---------------------------------------------
+                    layout: {
+                        padding: {
+                            top: 20, 
+                            bottom: 10,
+                            left: 10,
+                            right: 10
+                        }
+                    },
+                    scales: {
+                        x: { 
+                            grid: { color: '#374151' },
+                            ticks: {
+                                autoSkip: true, 
+                                maxRotation: 60, 
+                                minRotation: 60,
+                                padding: 5, 
+                            }
+                        }, 
+                        y: { 
+                            beginAtZero: true,
+                            grid: { color: '#374151' }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            labels: { color: '#e5e7eb' }
+                        },
+                        datalabels: {
+                            anchor: 'end',
+                            align: 'top',
+                            color: '#e5e7eb', 
+                            font: {
+                                weight: 'bold'
+                            },
+                            display: function(context) {
+                                return context.dataset.data[context.dataIndex] > 0;
+                            },
+                            formatter: (value) => {
+                                return value;
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // --- Función Tabla Agentes (sin cambios) ---
+        function renderizarTablaAgentes(data) {
+            const container = document.getElementById('tablaAgentes');
+            if (!data || data.length === 0) {
+                container.innerHTML = "<p>No se encontraron datos de agentes para conversaciones 'OUT'.</p>";
+                return;
+            }
+            let html = '<table>';
+            html += `
+                <tr>
+                    <th>Tienda</th>
+                    <th>Límite de Usos Hoy (20)</th>
+                    <th>Rol</th>
+                    <th>Agente</th>
+                    <th>Total Usos (30 días)</th>
+                </tr>
+            `;
+            data.forEach(tienda => {
+                const totalHoy = tienda.total_tienda_hoy;
+                const limite = tienda.limite_diario;
+                const claseLimite = totalHoy >= limite ? 'limite-alerta' : 'limite-ok';
+                const primeraFilaAgente = tienda.agentes.length > 0 ? tienda.agentes[0] : null;
+                if (primeraFilaAgente) {
+                    html += `
+                        <tr>
+                            <td rowspan="${tienda.agentes.length}">${tienda.tienda}</td>
+                            <td rowspan="${tienda.agentes.length}" class="${claseLimite}">
+                                ${totalHoy} / ${limite}
+                            </td>
+                            <td>${primeraFilaAgente.rol}</td>
+                            <td>${primeraFilaAgente.nombre}</td>
+                            <td>${primeraFilaAgente.total_usos}</td>
+                        </tr>
+                    `;
+                    for (let i = 1; i < tienda.agentes.length; i++) {
+                        const agente = tienda.agentes[i];
+                        html += `
+                            <tr>
+                                <td>${agente.rol}</td>
+                                <td>${agente.nombre}</td>
+                                <td>${agente.total_usos}</td>
+                            </tr>
+                        `;
+                    }
+                } else {
+                    html += `
+                        <tr>
+                            <td>${tienda.tienda}</td>
+                            <td class="${claseLimite}">${totalHoy} / ${limite}</td>
+                            <td colspan="3"><em>(Sin agentes con conversaciones 'OUT')</em></td>
+                        </tr>
+                    `;
+                }
+            });
+            html += '</table>';
+            container.innerHTML = html;
+        }
+
+        // 4. Ejecutar la función al cargar la página
+        cargarDatos();
+    </script>
+
+</body>
+</html>
+
+
