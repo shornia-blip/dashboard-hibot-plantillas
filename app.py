@@ -1,28 +1,57 @@
 import datetime
-import os  # <-- AÑADIDO PARA LA SEGURIDAD
+import os
 import re
+import requests  # Importación clave
 from collections import defaultdict
+from functools import wraps  # Para la autenticación
 
-from flask import Flask, jsonify
+# --- Modificado para la autenticación ---
+from flask import Flask, jsonify, Response, request, send_from_directory
 from flask_cors import CORS
 
 # --- 1. CONFIGURACIÓN DE HIBOT ---
-# ¡TUS SECRETOS AHORA SE LEEN DESDE RENDER DE FORMA SEGURA!
+# Lee los secretos de HIBOT desde las Variables de Entorno de Render
 HIBOT_BASE_URL = "https://pdn.api.hibot.us/api_external"
 HIBOT_APP_ID = os.environ.get("HIBOT_APP_ID")
 HIBOT_APP_SECRET = os.environ.get("HIBOT_APP_SECRET")
-# ------------------------------------
+
+# --- 2. ¡NUEVA CONFIGURACIÓN DE SEGURIDAD DEL DASHBOARD! ---
+# Lee el usuario y contraseña del dashboard desde las Variables de Entorno de Render
+DASHBOARD_USER = os.environ.get("DASHBOARD_USER", "admin")
+DASHBOARD_PASS = os.environ.get("DASHBOARD_PASS", "password")
+# -----------------------------------------------------------
 
 # Inicializa la aplicación Flask
 app = Flask(__name__)
-# Configura CORS para permitir que tu frontend llame a esta API
+# Configura CORS
 CORS(app, resources={r"/api/datos": {"origins": "*"}})
 
-# --- 2. LÓGICA DE PARSEO DE AGENTES ---
+# --- 3. LÓGICA DE AUTENTICACIÓN (NUEVO) ---
+
+def check_auth(username, password):
+    """Verifica el usuario y contraseña."""
+    return username == DASHBOARD_USER and password == DASHBOARD_PASS
+
+def authenticate():
+    """Envía una respuesta 401 para pedir autenticación."""
+    return Response(
+    'Acceso denegado.\n'
+    'Debes iniciar sesión para ver esta página.', 401,
+    {'WWW-Authenticate': 'Basic realm="Login Requerido"'})
+
+def requires_auth(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth = request.authorization
+        if not auth or not check_auth(auth.username, auth.password):
+            return authenticate()
+        return f(*args, **kwargs)
+    return decorated
+
+# --- 4. LÓGICA DE PARSEO DE AGENTES ---
 # Define los roles y su orden
 ROLES_ORDEN = {"J": 1, "C": 2, "V": 3, "VD": 4, "TR": 5, "Otro": 99}
 # Compila la expresión regular para extraer los datos del agente
-# Patrón: (R...)(V|C|J...) - (Nombre...)
 AGENT_PATTERN = re.compile(
     r'^(R\d+)\s+(VD|TR|J|C|V)\s*-?\s+(.+)$',
     re.IGNORECASE
@@ -49,6 +78,8 @@ def parse_agent_name(name):
         # Si no coincide, va a "No Asignado"
         print(f"Nombre de agente no coincide con el patrón: '{name}'. Asignado a 'No Asignado'.")
         return "No Asignado", "Otro", name
+
+# --- 5. LÓGICA DE DATOS HIBOT ---
 
 def get_hibot_token():
     """
@@ -79,7 +110,7 @@ def fetch_hibot_template_data(token):
     """
     if not token:
         print("No hay token, no se pueden obtener datos.")
-        return []
+        return None # Devuelve None para que la función principal maneje el error
 
     conversations_url = f"{HIBOT_BASE_URL}/conversations"
     headers = {"Authorization": f"Bearer {token}"}
@@ -108,7 +139,7 @@ def fetch_hibot_template_data(token):
             return []
     except requests.exceptions.RequestException as e:
         print(f"Error al obtener conversaciones de HIBOT: {e}")
-        return []
+        return None # Devuelve None para que la función principal maneje el error
 
 def process_data(raw_data):
     """
@@ -136,7 +167,7 @@ def process_data(raw_data):
         try:
             # Convertir timestamp (1759152081170) a fecha legible (29/10)
             fecha_dt = datetime.datetime.fromtimestamp(created_timestamp / 1000)
-            fecha_str = fecha_dt.strftime('%d/%m')
+            fecha_str = fecha_dt.strftime('%d/%m') # Formato Día/Mes
         except Exception:
             continue
 
@@ -228,33 +259,40 @@ def process_data(raw_data):
     return jsonify(datos_finales)
 
 
-# --- 3. ENDPOINT DE LA API ---
+# --- 6. ENDPOINTS DE LA API (Modificados con seguridad) ---
 
 @app.route('/')
+@requires_auth  # <-- ¡SEGURIDAD AÑADIDA!
 def home():
     """
-    Ruta raíz para verificar que el servidor está vivo.
+    Ruta raíz. Ahora sirve tu index.html de forma segura.
     """
-    return "El servidor del Dashboard HIBOT está funcionando."
+    # Asume que index.html está en la misma carpeta raíz
+    # (Lo cual es correcto en tu repositorio de GitHub)
+    print(f"Usuario '{request.authorization.username}' autenticado. Sirviendo index.html...")
+    return send_from_directory('.', 'index.html')
 
 @app.route('/api/datos')
+@requires_auth  # <-- ¡SEGURIDAD AÑADIDA!
 def get_dashboard_data():
     """
     Endpoint principal que el frontend llamará.
     """
-    print("\n[PETICIÓN RECIBIDA] /api/datos")
+    print(f"\n[PETICIÓN RECIBIDA] /api/datos por usuario '{request.authorization.username}'")
     token = get_hibot_token()
+    if not token:
+        return jsonify({"error": "Fallo al obtener el token de HIBOT"}), 500
+    
     raw_data = fetch_hibot_template_data(token)
+    if raw_data is None:
+        return jsonify({"error": "Fallo al obtener los datos de HIBOT"}), 500
+        
     datos_procesados = process_data(raw_data)
     print("Enviando datos procesados al frontend.")
     return datos_procesados
 
 if __name__ == '__main__':
-    # Usamos el puerto que Render nos asigna a través de la variable PORT
     port = int(os.environ.get('PORT', 5001))
     print(f"Iniciando servidor Flask en el puerto {port}")
-    # app.run(debug=True, port=port) <--- Esto es para desarrollo
-    # Para producción en Render, Gunicorn llamará a la variable 'app'
-    # Así que no necesitamos 'app.run()' aquí si usamos Gunicorn
-    pass
+    pass # Gunicorn llamará a 'app'
 
