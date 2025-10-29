@@ -1,54 +1,84 @@
 import datetime
+import os  # <-- AÑADIDO PARA LA SEGURIDAD
 import re
-import requests # <-- ¡ESTA LÍNEA FALTABA!
 from collections import defaultdict
-from flask import Flask, jsonify, current_app
+
+from flask import Flask, jsonify
 from flask_cors import CORS
 
 # --- 1. CONFIGURACIÓN DE HIBOT ---
-# ¡REEMPLAZA ESTO CON TUS CREDENCIALES REALES!
+# ¡TUS SECRETOS AHORA SE LEEN DESDE RENDER DE FORMA SEGURA!
 HIBOT_BASE_URL = "https://pdn.api.hibot.us/api_external"
-HIBOT_APP_ID = "6749f162ea4755c8d8df65f8"
-HIBOT_APP_SECRET = "260903b7-bdbb-44d7-acaf-bad9decea3a8"
+HIBOT_APP_ID = os.environ.get("HIBOT_APP_ID")
+HIBOT_APP_SECRET = os.environ.get("HIBOT_APP_SECRET")
 # ------------------------------------
 
-# --- 2. LÓGICA DE NEGOCIO ---
-# Patrón para nombres de agente: R[numero] [Rol] - [Nombre]
-# El guion y el espacio son opcionales para manejar casos como "R11 V ALBERTO"
-AGENT_PATTERN = re.compile(r'^(R\d+)\s+(VD|TR|J|C|V)\s*-?\s+(.+)$', re.IGNORECASE)
-
-# Lista de agentes a ignorar
-AGENTES_IGNORADOS = {'Camila', 'FRANCO'}
-
-# Límite diario de conversaciones OUT por tienda
-LIMITE_DIARIO_TIENDA = 20
-
-# -----------------------------
-
+# Inicializa la aplicación Flask
 app = Flask(__name__)
-CORS(app) # Habilitar CORS para todas las rutas
+# Configura CORS para permitir que tu frontend llame a esta API
+CORS(app, resources={r"/api/datos": {"origins": "*"}})
+
+# --- 2. LÓGICA DE PARSEO DE AGENTES ---
+# Define los roles y su orden
+ROLES_ORDEN = {"J": 1, "C": 2, "V": 3, "VD": 4, "TR": 5, "Otro": 99}
+# Compila la expresión regular para extraer los datos del agente
+# Patrón: (R...)(V|C|J...) - (Nombre...)
+AGENT_PATTERN = re.compile(
+    r'^(R\d+)\s+(VD|TR|J|C|V)\s*-?\s+(.+)$',
+    re.IGNORECASE
+)
+
+def parse_agent_name(name):
+    """
+    Analiza el nombre de un agente y devuelve tienda, rol y nombre.
+    """
+    if not name:
+        return "No Asignado", "Otro", "Sin Nombre"
+        
+    # Excluir agentes de supervisión
+    if name.upper() in ["CAMILA", "FRANCO"]:
+        return None, None, None # Retorna None para ser filtrado
+
+    match = AGENT_PATTERN.match(name)
+    if match:
+        tienda = match.group(1).upper()
+        rol = match.group(2).upper()
+        nombre = match.group(3).strip()
+        return tienda, rol, nombre
+    else:
+        # Si no coincide, va a "No Asignado"
+        print(f"Nombre de agente no coincide con el patrón: '{name}'. Asignado a 'No Asignado'.")
+        return "No Asignado", "Otro", name
 
 def get_hibot_token():
-    """Se autentica contra la API de HIBOT y obtiene un token de acceso."""
+    """
+    Se autentica contra la API de HIBOT y obtiene un token de acceso.
+    """
     login_url = f"{HIBOT_BASE_URL}/login"
-    current_app.logger.info(f"Intentando autenticarse en: {login_url}")
+    print(f"Intentando autenticarse en: {login_url}")
     
+    # NUEVA VERIFICACIÓN DE SEGURIDAD
+    if not HIBOT_APP_ID or not HIBOT_APP_SECRET:
+        print("Error: Las variables HIBOT_APP_ID o HIBOT_APP_SECRET no están configuradas en el entorno de Render.")
+        return None
+
     try:
         payload = {"appId": HIBOT_APP_ID, "appSecret": HIBOT_APP_SECRET}
         response = requests.post(login_url, json=payload)
         response.raise_for_status()
         token = response.json().get('token')
-        current_app.logger.info("Token de HIBOT obtenido exitosamente.")
+        print("Token de HIBOT obtenido exitosamente.")
         return token
-        
     except requests.exceptions.RequestException as e:
-        current_app.logger.error(f"Error al autenticarse en HIBOT: {e}")
+        print(f"Error al autenticarse en HIBOT: {e}")
         return None
 
 def fetch_hibot_template_data(token):
-    """Obtiene el historial de conversaciones usando el endpoint POST /conversations."""
+    """
+    Obtiene el historial de conversaciones usando el endpoint POST /conversations.
+    """
     if not token:
-        current_app.logger.warning("No hay token, no se pueden obtener datos.")
+        print("No hay token, no se pueden obtener datos.")
         return []
 
     conversations_url = f"{HIBOT_BASE_URL}/conversations"
@@ -56,207 +86,175 @@ def fetch_hibot_template_data(token):
     
     fecha_hasta = datetime.datetime.now()
     fecha_desde = fecha_hasta - datetime.timedelta(days=30)
-    
     timestamp_hasta = int(fecha_hasta.timestamp() * 1000)
     timestamp_desde = int(fecha_desde.timestamp() * 1000)
 
-    payload = {
-        "from": timestamp_desde,
-        "to": timestamp_hasta,
-        "channelType": "WHATSAPP" 
-    }
+    payload = {"from": timestamp_desde, "to": timestamp_hasta, "channelType": "WHATSAPP"}
     
-    current_app.logger.info(f"Obteniendo conversaciones desde {fecha_desde} hasta {fecha_hasta}...")
-
+    print(f"Obteniendo conversaciones desde {fecha_desde} hasta {fecha_hasta}...")
     try:
         response = requests.post(conversations_url, headers=headers, json=payload)
         response.raise_for_status()
         data = response.json()
         
         if data and isinstance(data, list):
-            current_app.logger.info(f"Se obtuvieron {len(data)} conversaciones para procesar.")
-            current_app.logger.debug(f"--- ESTRUCTURA DE UNA CONVERSACIÓN (DEBUG) ---\n{data[0]}\n----------------------------------------------")
-        elif not data:
-            current_app.logger.info("Respuesta exitosa pero no se encontraron conversaciones en este rango.")
+            print(f"Se obtuvieron {len(data)} conversaciones para procesar.")
+            print("\n--- ESTRUCTURA DE UNA CONVERSACIÓN (DEBUG) ---")
+            print(data[0])
+            print("----------------------------------------------\n")
+            return data
+        else:
+            print("Respuesta exitosa pero no se encontraron conversaciones.")
             return []
-            
-        return data
-        
     except requests.exceptions.RequestException as e:
-        current_app.logger.error(f"Error al obtener conversaciones de HIBOT: {e}")
+        print(f"Error al obtener conversaciones de HIBOT: {e}")
         return []
 
-def parse_agent_name(agent_name):
-    """Analiza el nombre de un agente y devuelve su tienda, rol y nombre."""
-    if not agent_name:
-        return 'No Asignado', 'N/A', 'Sin Agente'
-        
-    match = AGENT_PATTERN.match(agent_name)
-    if match:
-        tienda = match.group(1).upper()
-        rol = match.group(2).upper()
-        nombre = match.group(3).title()
-        return tienda, rol, nombre
-    else:
-        current_app.logger.warning(f"Nombre de agente no coincide con el patrón: '{agent_name}'. Asignado a 'No Asignado'.")
-        return 'No Asignado', 'N/A', agent_name
-
 def process_data(raw_data):
-    """Procesa la lista de conversaciones para calcular todos los datos del dashboard."""
-    current_app.logger.info("Procesando datos (Lógica de Agente + Dirección)...")
+    """
+    Procesa la lista de conversaciones para calcular datos de dirección y agentes.
+    """
+    print("Procesando datos (Lógica de Agente + Dirección)...")
     
-    # --- Estructuras de datos para los gráficos ---
-    uso_diario_direccion = defaultdict(lambda: defaultdict(int))
-    uso_acumulado_direccion = defaultdict(int)
+    # Para los gráficos de IN vs OUT
+    uso_diario = defaultdict(lambda: defaultdict(int))
+    uso_acumulado = defaultdict(int)
     todas_las_fechas = set()
     
-    # --- Estructuras de datos para la tabla ---
-    # Usamos diccionarios anidados para agrupar fácilmente
-    # tiendas['R1']['V']['ALBERTO GAJDYSZ'] = 5
-    tiendas_data = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
-    tiendas_hoy_count = defaultdict(int)
-    
-    fecha_de_hoy_str = datetime.datetime.now().strftime("%d/%m") # Formato "29/10"
+    # Para la tabla de Agentes (solo OUT)
+    agentes_data = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+    uso_hoy_tienda = defaultdict(int)
+    hoy_str = datetime.datetime.now().strftime('%d/%m') # Formato '29/10'
 
     for conv in raw_data:
+        direccion = conv.get('direction', 'IN')
+        created_timestamp = conv.get('created')
+        
+        if not created_timestamp:
+            continue
+            
         try:
-            timestamp_creacion_millis = conv.get('created')
-            if not timestamp_creacion_millis:
-                current_app.logger.warning(f"Conversación ID {conv.get('id')} no tiene 'created', saltando.")
-                continue
+            # Convertir timestamp (1759152081170) a fecha legible (29/10)
+            fecha_dt = datetime.datetime.fromtimestamp(created_timestamp / 1000)
+            fecha_str = fecha_dt.strftime('%d/%m')
+        except Exception:
+            continue
+
+        # 1. Contar para los gráficos (IN vs OUT)
+        uso_diario[fecha_str][direccion] += 1
+        uso_acumulado[direccion] += 1
+        todas_las_fechas.add(fecha_str)
+        
+        # 2. Contar para la tabla de agentes (SOLO 'OUT')
+        if direccion == 'OUT':
+            agent = conv.get('agent')
+            if agent and agent.get('name'):
+                agent_name = agent.get('name')
                 
-            timestamp_creacion_sec = timestamp_creacion_millis / 1000
-            fecha_dt = datetime.datetime.fromtimestamp(timestamp_creacion_sec)
-            
-            # --- ¡CAMBIO DE FORMATO DE FECHA! ---
-            # De '2025-10-29' a '29/10'
-            fecha_str = fecha_dt.strftime("%d/%m")
-            # -------------------------------------
-
-            todas_las_fechas.add(fecha_str)
-            
-            direction = conv.get('direction', 'IN') # Asumir IN si no hay dirección
-            etiqueta_direccion = 'Iniciadas por Cliente (IN)' if direction == 'IN' else 'Iniciadas por Agente/Plantilla (OUT)'
-
-            # 1. Llenar datos para gráficos de IN vs OUT
-            uso_diario_direccion[fecha_str][etiqueta_direccion] += 1
-            uso_acumulado_direccion[etiqueta_direccion] += 1
-
-            # 2. Llenar datos para la tabla (solo conversaciones OUT)
-            if direction == 'OUT':
-                agent = conv.get('agent')
-                if not agent or not agent.get('name'):
-                    tienda, rol, nombre = 'No Asignado', 'N/A', 'Sin Agente'
-                else:
-                    agent_name = agent.get('name')
-                    
-                    # Ignorar agentes específicos
-                    if agent_name in AGENTES_IGNORADOS:
-                        continue
-                        
-                    tienda, rol, nombre = parse_agent_name(agent_name)
-
-                # Incrementar conteo total de 30 días
-                tiendas_data[tienda][rol][nombre] += 1
+                # Parsear el nombre
+                tienda, rol, nombre = parse_agent_name(agent_name)
                 
-                # Incrementar conteo de HOY si la fecha coincide
-                if fecha_str == fecha_de_hoy_str:
-                    tiendas_hoy_count[tienda] += 1
+                # Si es None, es un agente excluido (Camila, Franco)
+                if tienda is None:
+                    continue
+                
+                # Contar total de usos por agente
+                agentes_data[tienda][rol][nombre] += 1
+                
+                # Contar usos de HOY por tienda (para el límite)
+                if fecha_str == hoy_str:
+                    uso_hoy_tienda[tienda] += 1
 
-        except Exception as e:
-            current_app.logger.error(f"Error procesando conversación ID {conv.get('id')}: {e}. Datos: {conv}")
+    # 3. Formatear datos para los gráficos
+    labels_fechas = sorted(list(todas_las_fechas), key=lambda d: datetime.datetime.strptime(d, '%d/%m'))
+    labels_plantillas = ['IN', 'OUT'] # Fijo
 
-    # --- 3. Formatear datos de GRÁFICOS ---
-    # Corrección para ordenar fechas "dd/mm"
-    labels_fechas = sorted(list(todas_las_fechas), key=lambda d: (d.split('/')[1], d.split('/')[0]))
-    
-    # Asegurarse de que ambas etiquetas existan siempre
-    labels_plantillas = ['Iniciadas por Cliente (IN)', 'Iniciadas por Agente/Plantilla (OUT)']
-    uso_acumulado_direccion.setdefault('Iniciadas por Cliente (IN)', 0)
-    uso_acumulado_direccion.setdefault('Iniciadas por Agente/Plantilla (OUT)', 0)
-
+    datos_diario_procesados = defaultdict(lambda: defaultdict(int))
+    for fecha in labels_fechas:
+        for plantilla in labels_plantillas:
+            datos_diario_procesados[fecha][plantilla] = uso_diario[fecha].get(plantilla, 0)
+            
     direccion_data = {
         'diario': {
             'fechas': labels_fechas,
             'plantillas': labels_plantillas,
-            'datos': uso_diario_direccion
+            'datos': datos_diario_procesados
         },
         'acumulado': {
             'plantillas': labels_plantillas,
-            'conteo': [uso_acumulado_direccion[p] for p in labels_plantillas]
+            'conteo': [uso_acumulado.get(p, 0) for p in labels_plantillas]
         }
     }
 
-    # --- 4. Formatear datos de TABLA ---
-    # Ordenar roles como pide el negocio: J, C, V, VD, TR, N/A
-    rol_orden = {'J': 1, 'C': 2, 'V': 3, 'VD': 4, 'TR': 5, 'N/A': 6}
-    
-    agente_data = []
-    
-    # Ordenar tiendas (R1, R2, R10, No Asignado)
-    tiendas_ordenadas = sorted(tiendas_data.keys(), key=lambda t: int(t[1:]) if t.startswith('R') else 999)
-    
-    for tienda in tiendas_ordenadas:
-        agentes_list = []
-        # Ordenar roles
-        roles_ordenados = sorted(tiendas_data[tienda].keys(), key=lambda r: rol_orden.get(r, 99))
-        
-        for rol in roles_ordenados:
-            # Ordenar agentes por nombre
-            agentes_ordenados = sorted(tiendas_data[tienda][rol].keys())
-            for nombre in agentes_ordenados:
-                agentes_list.append({
-                    'rol': rol,
-                    'nombre': nombre,
-                    'total_usos': tiendas_data[tienda][rol][nombre]
+    # 4. Formatear datos para la tabla de agentes
+    tabla_agentes_final = []
+    for tienda, roles in agentes_data.items():
+        agentes_ordenados = []
+        for rol, nombres in roles.items():
+            for nombre, total_usos in nombres.items():
+                agentes_ordenados.append({
+                    "rol": rol,
+                    "nombre": nombre,
+                    "total_usos": total_usos
                 })
         
-        agente_data.append({
-            'tienda': tienda,
-            'agentes': agentes_list,
-            'total_tienda_hoy': tiendas_hoy_count[tienda],
-            'limite_diario': LIMITE_DIARIO_TIENDA
+        # Ordenar agentes por ROL (J, C, V...)
+        agentes_ordenados.sort(key=lambda x: (ROLES_ORDEN.get(x['rol'], 99), x['nombre']))
+        
+        tabla_agentes_final.append({
+            "tienda": tienda,
+            "total_tienda_hoy": uso_hoy_tienda.get(tienda, 0),
+            "limite_diario": 20,
+            "agentes": agentes_ordenados
         })
-
-    # --- 5. Combinar y Enviar ---
-    final_data = {
-        'direccion_data': direccion_data,
-        'agente_data': agente_data
+    
+    # Ordenar tiendas (R1, R11, R2, No Asignado...)
+    tabla_agentes_final.sort(key=lambda x: (
+        0 if x['tienda'].startswith('R') else 1,
+        int(x['tienda'][1:]) if x['tienda'].startswith('R') and x['tienda'][1:].isdigit() else 99,
+        x['tienda']
+    ))
+    
+    datos_finales = {
+        "direccion_data": direccion_data,
+        "agente_data": tabla_agentes_final
     }
     
-    current_app.logger.debug(f"--- JSON A ENVIAR (DEBUG) ---\ndireccion_data keys: {final_data['direccion_data'].keys()}\nagente_data items: {len(final_data['agente_data'])}\n-----------------------------")
-    current_app.logger.info("Datos procesados exitosamente.")
-    return final_data
+    print("\n--- JSON A ENVIAR (DEBUG) ---")
+    print(f"direccion_data keys: {list(datos_finales['direccion_data'].keys())}")
+    print(f"agente_data items: {len(datos_finales['agente_data'])}")
+    print("-----------------------------\n")
 
+    return jsonify(datos_finales)
+
+
+# --- 3. ENDPOINT DE LA API ---
+
+@app.route('/')
+def home():
+    """
+    Ruta raíz para verificar que el servidor está vivo.
+    """
+    return "El servidor del Dashboard HIBOT está funcionando."
 
 @app.route('/api/datos')
 def get_dashboard_data():
-    """Endpoint principal que el frontend llamará."""
-    current_app.logger.info("\n[PETICIÓN RECIBIDA] /api/datos")
+    """
+    Endpoint principal que el frontend llamará.
+    """
+    print("\n[PETICIÓN RECIBIDA] /api/datos")
     token = get_hibot_token()
     raw_data = fetch_hibot_template_data(token)
-    
-    if not raw_data:
-        # Enviar datos vacíos para que el frontend no falle
-        current_app.logger.warning("No se obtuvieron datos crudos, enviando estructura vacía.")
-        return jsonify({
-            'direccion_data': {
-                'diario': {'fechas': [], 'plantillas': [], 'datos': {}},
-                'acumulado': {'plantillas': [], 'conteo': []}
-            },
-            'agente_data': []
-        })
-        
     datos_procesados = process_data(raw_data)
-    
-    current_app.logger.info("Enviando datos procesados al frontend.")
-    return jsonify(datos_procesados)
+    print("Enviando datos procesados al frontend.")
+    return datos_procesados
 
 if __name__ == '__main__':
-    # Habilitar logging detallado
-    import logging
-    logging.basicConfig(level=logging.INFO)
-    app.logger.setLevel(logging.INFO)
-    app.logger.info(f"Iniciando servidor Flask en http://127.0.0.1:5001")
-    app.run(debug=True, port=5001)
+    # Usamos el puerto que Render nos asigna a través de la variable PORT
+    port = int(os.environ.get('PORT', 5001))
+    print(f"Iniciando servidor Flask en el puerto {port}")
+    # app.run(debug=True, port=port) <--- Esto es para desarrollo
+    # Para producción en Render, Gunicorn llamará a la variable 'app'
+    # Así que no necesitamos 'app.run()' aquí si usamos Gunicorn
+    pass
 
