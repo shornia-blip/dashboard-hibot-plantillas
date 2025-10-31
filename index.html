@@ -4,117 +4,103 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard de Plantillas WhatsApp</title>
-    
-    <!-- 1. Importar Chart.js y plugin de etiquetas -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- 1. Importar Chart.js y el plugin de etiquetas -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
-
-    <!-- 2. Importar nueva tipografía (Inter) -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     
     <style>
-        /* --- ESTILOS MODO OSCURO --- */
         body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: #111827; 
-            color: #f9fafb; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #111827; /* Fondo gris oscuro */
+            color: #e5e7eb; /* Texto claro */
             margin: 0;
             padding: 20px;
         }
         h1, h3 {
-            color: #ffffff;
-            font-weight: 600;
-        }
-        h1 {
             text-align: center;
+            color: #ffffff;
+            font-weight: 500;
         }
-        .container {
+        
+        /* Contenedor principal */
+        .dashboard-container {
             display: grid;
-            grid-template-columns: 1fr;
+            grid-template-columns: 1fr; /* Una columna para todo */
             gap: 20px;
             max-width: 1400px;
             margin: 20px auto;
         }
         
-        /* --- Tarjetas de Estadísticas --- */
+        /* Tarjetas de Estadísticas (IN vs OUT) */
         .stats-container {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            grid-template-columns: 1fr 1fr;
             gap: 20px;
         }
         .stat-card {
-            background-color: #1f2937;
+            background-color: #1f2937; /* Fondo de tarjeta */
             border-radius: 8px;
-            padding: 25px;
-            border: 1px solid #374151;
+            padding: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            text-align: center;
         }
         .stat-card h3 {
             margin-top: 0;
             font-size: 1.1rem;
-            color: #9ca3af; 
+            color: #9ca3af; /* Color de título de tarjeta */
         }
         .stat-card .value {
-            font-size: 2.25rem;
-            font-weight: 700;
+            font-size: 2.5rem;
+            font-weight: 600;
             color: #ffffff;
         }
         .stat-card .percentage {
-            font-size: 1.25rem;
-            font-weight: 600;
-            margin-left: 10px;
+            font-size: 1.2rem;
+            color: #6b7280; /* Color de porcentaje */
         }
-        .color-in { color: #d1d5db; } 
-        .color-out { color: #0d1bd4; } 
-        /* ---------------------------------- */
 
-        .chart-box {
-            background-color: #1f2937; 
+        /* Contenedor de Gráfico y Tabla */
+        .chart-box, .table-container {
+            background-color: #1f2937; /* Fondo de tarjeta */
             border-radius: 8px;
             padding: 20px;
-            border: 1px solid #374151; 
-            position: relative;
-            grid-column: 1 / -1; 
-            overflow: hidden; 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
         }
-        
-        /* Estilos de la tabla */
+
+        /* Estilos de la Tabla */
         .table-container {
-            background-color: #1f2937; 
-            border-radius: 8px;
-            padding: 20px;
-            border: 1px solid #374151; 
-            grid-column: 1 / -1; 
-            overflow-x: auto; 
+            overflow-x: auto;
         }
-        
         table {
             width: 100%;
             border-collapse: collapse;
             margin-top: 15px;
         }
         th, td {
-            border: 1px solid #374151; 
+            border: 1px solid #374151; /* Borde más oscuro */
             padding: 10px;
             text-align: left;
         }
         th {
-            background-color: #374151; 
+            background-color: #374151; /* Cabecera de tabla */
             font-size: 0.9rem;
             text-transform: uppercase;
-            color: #d1d5db; 
+            color: #d1d5db;
         }
-        td { color: #d1d5db; }
+        td {
+            color: #e5e7eb;
+        }
+        
+        /* Colores de Límite */
         .limite-ok {
-            background-color: #064e3b; 
-            color: #a7f3d0; 
+            background-color: #064e3b;
+            color: #a7f3d0;
             font-weight: bold;
             text-align: center;
         }
         .limite-alerta {
-            background-color: #7f1d1d; 
-            color: #fecaca; 
+            background-color: #7f1d1d;
+            color: #fecaca;
             font-weight: bold;
             text-align: center;
         }
@@ -124,18 +110,30 @@
 
     <h1>Dashboard de Uso de Plantillas (HIBOT)</h1>
 
-    <div class="container">
+    <div class="dashboard-container">
         
-        <div class="stats-container" id="stats-acumuladas">
-            <!-- El contenido se generará con JavaScript -->
+        <!-- 1. Tarjetas de Estadísticas -->
+        <div class="stats-container" id="stats-cards">
+            <!-- Los datos se cargarán aquí -->
+            <div class="stat-card">
+                <h3>Conversaciones (IN)</h3>
+                <div class="value">0</div>
+                <div class="percentage">(0.0%)</div>
+            </div>
+            <div class="stat-card">
+                <h3>Conversaciones (OUT)</h3>
+                <div class="value">0</div>
+                <div class="percentage">(0.0%)</div>
+            </div>
         </div>
-        
-        <!-- Gráfico de Barras 2D -->
-        <div class="chart-box" id="chart-box-diario">
+
+        <!-- 2. Gráfico de Barras Diario -->
+        <div class="chart-box">
             <h3>Uso Diario (Conversaciones OUT)</h3>
             <canvas id="graficoDiario"></canvas>
         </div>
         
+        <!-- 3. Tabla de Desglose por Agente -->
         <div class="table-container">
             <h3>Desglose por Agente (Conversaciones 'OUT' - 30 días)</h3>
             <div id="tablaAgentes">
@@ -144,161 +142,170 @@
         </div>
     </div>
 
-    <!-- Script principal de la aplicación -->
     <script>
-        // --- Constantes de Colores ---
-        const COLOR_AGENTE = '#0d1bd4'; 
-        const COLOR_CLIENTE_TEXT = '#d1d5db';
-        const COLOR_AGENTE_TEXT = '#0d1bd4'; 
-        
-        // --- Configuración global de Chart.js ---
-        Chart.defaults.color = '#e5e7eb'; 
-        Chart.defaults.borderColor = '#374151'; 
-        Chart.register(ChartDataLabels); // Registrar plugin
+        // Registrar el plugin de etiquetas
+        Chart.register(ChartDataLabels);
 
+        // Paleta de colores (Azul de Reino)
+        const COLOR_AZUL_REINO = '#0d1bd4';
+        const COLOR_TEXTO_GRAFICO = '#e5e7eb'; // Texto claro
+
+        // Guardamos las instancias de los gráficos
         let chartDiarioInstance = null;
-        // let dashboardData = null; // Ya no es necesario
+        
+        // --- ¡CORRECCIÓN! ---
+        // URL absoluta al backend en Render.
+        // Esto soluciona el error 'Failed to parse URL' en la vista previa
+        // y también funciona cuando está desplegado.
+        const API_URL = 'https://dashboard-reino-backend.onrender.com/api/datos';
+        // ------------------
 
+
+        // Función principal de JavaScript
         async function cargarDatos() {
             try {
-                const response = await fetch('https://dashboard-reino-backend.onrender.com/api/datos');
+                // Llama a la API (ahora con la URL absoluta)
+                // Se autenticará con la ventana emergente del navegador
+                const response = await fetch(API_URL);
+                
                 if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(`No se pudieron cargar los datos del backend. Servidor dice: ${errorText}`);
+                    // Si el login (401) falla, el navegador lo maneja.
+                    // Esto es para errores 500, etc.
+                    throw new Error(`Error del servidor: ${response.status} ${response.statusText}`);
                 }
+                
                 const data = await response.json();
                 
-                // dashboardData = data; // Ya no es necesario
-                console.log("Datos recibidos del backend:", data);
-
-                if (data.direccion_data) {
-                    renderizarStatsAcumuladas(data.direccion_data.acumulado);
-                    renderizarGraficoDiario(data.direccion_data.diario); // Restaurado
+                if (!data) {
+                    throw new Error("La respuesta del servidor está vacía o no es un JSON válido.");
                 }
 
+                // 1. Renderizar tarjetas (IN vs OUT)
+                if (data.direccion_data && data.direccion_data.acumulado) {
+                    renderizarTarjetas(data.direccion_data.acumulado);
+                }
+
+                // 2. Renderizar el gráfico diario
+                if (data.direccion_data && data.direccion_data.diario) {
+                    renderizarGraficoDiario(data.direccion_data.diario);
+                }
+
+                // 3. Renderizar la tabla de agentes
                 if (data.agente_data) {
                     renderizarTablaAgentes(data.agente_data);
                 }
 
-            } catch (error)
- {
+            } catch (error) {
                 console.error('Error al cargar el dashboard:', error);
                 document.body.innerHTML = `<h1>Error al cargar datos: ${error.message}</h1><p>Asegúrate de que el script de Python (app.py) se esté ejecutando y no tenga errores. Revisa la consola del backend y la consola del navegador (F12).</p>`;
             }
         }
-        
-        // --- Tarjetas de Estadísticas ---
-        function renderizarStatsAcumuladas(data) {
-            const container = document.getElementById('stats-acumuladas');
+
+        function renderizarTarjetas(data) {
+            // data = data.direccion_data.acumulado
+            const container = document.getElementById('stats-cards');
             const total = data.conteo.reduce((a, b) => a + b, 0);
             
-            const idxCliente = data.plantillas.indexOf('Iniciadas por Cliente (IN)');
-            const idxAgente = data.plantillas.indexOf('Iniciadas por Agente/Plantilla (OUT)');
+            const idxIN = data.plantillas.indexOf('IN');
+            const idxOUT = data.plantillas.indexOf('OUT');
             
-            const conteoCliente = data.conteo[idxCliente] || 0;
-            const conteoAgente = data.conteo[idxAgente] || 0;
+            const conteoIN = (idxIN !== -1) ? data.conteo[idxIN] : 0;
+            const conteoOUT = (idxOUT !== -1) ? data.conteo[idxOUT] : 0;
             
-            const porcCliente = total > 0 ? ((conteoCliente / total) * 100).toFixed(1) : 0;
-            const porcAgente = total > 0 ? ((conteoAgente / total) * 100).toFixed(1) : 0;
+            const porcIN = (total > 0) ? (conteoIN / total * 100).toFixed(1) : 0;
+            const porcOUT = (total > 0) ? (conteoOUT / total * 100).toFixed(1) : 0;
 
             container.innerHTML = `
                 <div class="stat-card">
                     <h3>Conversaciones (IN)</h3>
-                    <span class="value">${conteoCliente.toLocaleString('es-ES')}</span>
-                    <span class="percentage color-in">(${porcCliente}%)</span>
+                    <div class="value">${conteoIN.toLocaleString('es-AR')}</div>
+                    <div class="percentage">(${porcIN}%)</div>
                 </div>
                 <div class="stat-card">
                     <h3>Conversaciones (OUT)</h3>
-                    <span class="value">${conteoAgente.toLocaleString('es-ES')}</span>
-                    <span class.="percentage color-out">(${porcAgente}%)</span>
+                    <div class="value">${conteoOUT.toLocaleString('es-AR')}</div>
+                    <div class="percentage">(${porcOUT}%)</div>
                 </div>
             `;
         }
 
-        // --- Gráfico de Barras 2D (Restaurado) ---
         function renderizarGraficoDiario(data) {
+            // data = data.direccion_data.diario
             const ctx = document.getElementById('graficoDiario').getContext('2d');
+            
             if (chartDiarioInstance) {
                 chartDiarioInstance.destroy();
             }
-            const datasets = {};
-            const plantillaOUT = 'Iniciadas por Agente/Plantilla (OUT)';
-            datasets[plantillaOUT] = {
-                label: 'Conversaciones OUT',
-                data: [],
-                backgroundColor: COLOR_AGENTE, 
-            };
-            data.fechas.forEach(fecha => {
-                const conteo = data.datos[fecha]?.[plantillaOUT] || 0; 
-                datasets[plantillaOUT].data.push(conteo);
+            
+            // Extraer solo los datos de 'OUT'
+            const datosOUT = data.fechas.map(fecha => {
+                return data.datos[fecha] ? data.datos[fecha]['OUT'] || 0 : 0;
             });
-
+            
             chartDiarioInstance = new Chart(ctx, {
-                type: 'bar', 
+                type: 'bar',
                 data: {
-                    labels: data.fechas, // Fechas (ej. 29/10)
-                    datasets: Object.values(datasets) 
+                    labels: data.fechas, // Eje X (fechas '29/10')
+                    datasets: [
+                        {
+                            label: 'Conversaciones OUT',
+                            data: datosOUT,
+                            backgroundColor: COLOR_AZUL_REINO,
+                            borderColor: COLOR_AZUL_REINO
+                        }
+                    ]
                 },
-                plugins: [ChartDataLabels],
                 options: {
+                    aspectRatio: 3, // Proporción: 3 veces más ancho que alto
                     responsive: true,
-                    // --- ¡CORRECCIÓN DEFINITIVA! ---
-                    aspectRatio: 3,
-                    maintainAspectRatio: true, 
-                    // ---------------------------------------------
-                    layout: {
-                        padding: {
-                            top: 20, 
-                            bottom: 10,
-                            left: 10,
-                            right: 10
+                    plugins: {
+                        legend: {
+                            labels: { color: COLOR_TEXTO_GRAFICO } // Color de la leyenda
+                        },
+                        datalabels: { // Configuración de etiquetas de datos
+                            display: true,
+                            color: COLOR_TEXTO_GRAFICO,
+                            anchor: 'end',
+                            align: 'top',
+                            formatter: (value) => (value > 0 ? value : ''), // No mostrar '0'
+                            font: { weight: 'bold' }
                         }
                     },
                     scales: {
-                        x: { 
-                            grid: { color: '#374151' },
+                        x: {
                             ticks: {
-                                autoSkip: true, 
-                                maxRotation: 60, 
-                                minRotation: 60,
-                                padding: 5, 
+                                color: COLOR_TEXTO_GRAFICO, // Color de las fechas
+                                maxRotation: 60, // Rotar fechas
+                                minRotation: 60, // Rotar fechas
+                                autoSkip: true // Saltear fechas si se superponen
+                            },
+                            grid: {
+                                color: '#374151' // Color de líneas de fondo
                             }
-                        }, 
-                        y: { 
-                            beginAtZero: true,
-                            grid: { color: '#374151' }
-                        }
-                    },
-                    plugins: {
-                        legend: {
-                            labels: { color: '#e5e7eb' }
                         },
-                        datalabels: {
-                            anchor: 'end',
-                            align: 'top',
-                            color: '#e5e7eb', 
-                            font: {
-                                weight: 'bold'
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                color: COLOR_TEXTO_GRAFICO, // Color del eje Y
+                                stepSize: 1 // Forzar números enteros (1, 2, 3...)
                             },
-                            display: function(context) {
-                                return context.dataset.data[context.dataIndex] > 0;
-                            },
-                            formatter: (value) => {
-                                return value;
+                            grid: {
+                                color: '#374151' // Color de líneas de fondo
                             }
                         }
                     }
                 }
             });
         }
-
-        // --- Función Tabla Agentes (sin cambios) ---
+        
         function renderizarTablaAgentes(data) {
+            // data = data.agente_data
             const container = document.getElementById('tablaAgentes');
             if (!data || data.length === 0) {
                 container.innerHTML = "<p>No se encontraron datos de agentes para conversaciones 'OUT'.</p>";
                 return;
             }
+            
             let html = '<table>';
             html += `
                 <tr>
@@ -309,12 +316,15 @@
                     <th>Total Usos (30 días)</th>
                 </tr>
             `;
+            
             data.forEach(tienda => {
                 const totalHoy = tienda.total_tienda_hoy;
                 const limite = tienda.limite_diario;
                 const claseLimite = totalHoy >= limite ? 'limite-alerta' : 'limite-ok';
-                const primeraFilaAgente = tienda.agentes.length > 0 ? tienda.agentes[0] : null;
-                if (primeraFilaAgente) {
+                
+                if (tienda.agentes.length > 0) {
+                    const primeraFilaAgente = tienda.agentes[0];
+                    // Primera fila de la tienda (con rowspan)
                     html += `
                         <tr>
                             <td rowspan="${tienda.agentes.length}">${tienda.tienda}</td>
@@ -326,6 +336,8 @@
                             <td>${primeraFilaAgente.total_usos}</td>
                         </tr>
                     `;
+                    
+                    // Resto de agentes de la tienda
                     for (let i = 1; i < tienda.agentes.length; i++) {
                         const agente = tienda.agentes[i];
                         html += `
@@ -337,6 +349,7 @@
                         `;
                     }
                 } else {
+                    // Si una tienda no tiene agentes (raro, pero seguro)
                     html += `
                         <tr>
                             <td>${tienda.tienda}</td>
@@ -346,16 +359,15 @@
                     `;
                 }
             });
+            
             html += '</table>';
             container.innerHTML = html;
         }
 
-        // 4. Ejecutar la función al cargar la página
+        // Ejecutar la función al cargar la página
         cargarDatos();
     </script>
 
 </body>
 </html>
-
-
 
