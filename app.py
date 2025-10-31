@@ -43,7 +43,7 @@ def requires_auth(f):
     return decorated
 
 # --- 4. LÓGICA DE PARSEO DE AGENTES ---
-ROLES_ORDEN = {"J": 1, "C": 2, "V": 3, "VD": 4, "TR": 5, "Otro": 99}
+ROLES_ORDEN = {"J": 1, "C": 2, "V": 3, "VD": 4, "TR": 5, "Otro": 99, "Sistema": 100} # Añadido 'Sistema'
 AGENT_PATTERN = re.compile(
     r'^(R\d+)\s+(VD|TR|J|C|V)\s*-?\s+(.+)$',
     re.IGNORECASE
@@ -117,15 +117,20 @@ def fetch_hibot_template_data(token):
         print(f"Error al obtener conversaciones de HIBOT: {e}")
         return None
 
+# --- ¡FUNCIÓN 'process_data' MODIFICADA! ---
 def process_data(raw_data):
     print("Procesando datos (Lógica de Agente + Dirección)...")
     
-    uso_diario = defaultdict(lambda: defaultdict(int))
+    # Estructuras para datos agregados (Tarjetas y Tabla)
     uso_acumulado = defaultdict(int)
-    todas_las_fechas = set()
-    
     agentes_data = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
     uso_hoy_tienda = defaultdict(int)
+    
+    # Nuevas estructuras para datos diarios por tienda (Gráficos)
+    # Ejemplo: datos_diarios_por_tienda['R1']['30/09']['IN'] = 5
+    datos_diarios_por_tienda = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+    tiendas_set = set()
+    todas_las_fechas = set()
     
     # Fecha de "hoy" (basada en tus datos de 2025)
     hoy_str = datetime.datetime(2025, 10, 29).strftime('%d/%m')
@@ -139,63 +144,83 @@ def process_data(raw_data):
             
         try:
             fecha_dt = datetime.datetime.fromtimestamp(created_timestamp / 1000)
-            fecha_str = fecha_dt.strftime('%d/%m')
+            fecha_str = fecha_dt.strftime('%d/%m') # Formato Día/Mes
         except Exception:
             continue
-
-        # 1. Contar para los gráficos (IN vs OUT)
-        uso_diario[fecha_str][direccion] += 1
-        uso_acumulado[direccion] += 1
+            
         todas_las_fechas.add(fecha_str)
+
+        # 1. Contar para tarjetas (Acumulado Total)
+        uso_acumulado[direccion] += 1
         
-        # 2. Contar para la tabla de agentes (SOLO 'OUT')
-        if direccion == 'OUT':
-            agent = conv.get('agent')
+        # 2. Determinar la tienda para ESTA conversación
+        agent = conv.get('agent')
+        tienda_actual = "No Asignado" # Default
+        rol_actual = "Sistema"
+        nombre_actual = "Conversación Automática"
+
+        if agent and agent.get('name'):
+            agent_name = agent.get('name')
+            tienda, rol, nombre = parse_agent_name(agent_name)
             
-            # --- ¡INICIO DE LA CORRECCIÓN! ---
-            if agent and agent.get('name'):
-                agent_name = agent.get('name')
-                tienda, rol, nombre = parse_agent_name(agent_name)
-                
-                if tienda is None: # Excluir a Camila/Franco
-                    continue
+            if tienda is None: # Excluir a Camila/Franco
+                tienda_actual = "Supervisión" # Los agrupamos aquí
             else:
-                # ¡AQUÍ ESTÁ EL ARREGLO!
-                # Si no hay agente, lo asignamos a "No Asignado"
-                tienda = "No Asignado"
-                rol = "Sistema"
-                nombre = "Conversación Automática"
-            # --- FIN DE LA CORRECCIÓN! ---
+                tienda_actual = tienda
+                rol_actual = rol
+                nombre_actual = nombre
+        
+        tiendas_set.add(tienda_actual)
 
-            # Contar total de usos por agente
-            agentes_data[tienda][rol][nombre] += 1
-            
-            # Contar usos de HOY por tienda
-            if fecha_str == hoy_str:
-                uso_hoy_tienda[tienda] += 1
+        # 3. Contar para Gráficos (Diario por Tienda)
+        datos_diarios_por_tienda[tienda_actual][fecha_str][direccion] += 1
+        # También sumar al total
+        datos_diarios_por_tienda["Total"][fecha_str][direccion] += 1
 
-    # 3. Formatear datos para los gráficos
+        # 4. Contar para la tabla de agentes (SOLO 'OUT')
+        if direccion == 'OUT':
+            # Si tienda_actual no es None (ya excluye a Camila/Franco)
+            if tienda_actual != "Supervisión":
+                # Contar total de usos por agente
+                agentes_data[tienda_actual][rol_actual][nombre_actual] += 1
+                
+                # Contar usos de HOY por tienda
+                if fecha_str == hoy_str:
+                    uso_hoy_tienda[tienda_actual] += 1
+
+    # --- POST-PROCESAMIENTO ---
+
     labels_fechas = sorted(list(todas_las_fechas), key=lambda d: datetime.datetime.strptime(d, '%d/%m'))
-    labels_plantillas = ['IN', 'OUT']
+    tiendas_disponibles = sorted(list(tiendas_set))
 
-    datos_diario_procesados = defaultdict(lambda: defaultdict(int))
-    for fecha in labels_fechas:
-        for plantilla in labels_plantillas:
-            datos_diario_procesados[fecha][plantilla] = uso_diario[fecha].get(plantilla, 0)
-            
-    direccion_data = {
-        'diario': {
-            'fechas': labels_fechas,
-            'plantillas': labels_plantillas,
-            'datos': datos_diario_procesados
-        },
-        'acumulado': {
-            'plantillas': labels_plantillas,
-            'conteo': [uso_acumulado.get(p, 0) for p in labels_plantillas]
-        }
+    # 1. Formatear datos para Tarjetas
+    resumen_acumulado = {
+        'plantillas': ['IN', 'OUT'],
+        'conteo': [uso_acumulado.get('IN', 0), uso_acumulado.get('OUT', 0)]
     }
 
-    # 4. Formatear datos para la tabla de agentes
+    # 2. Formatear datos para Gráficos
+    # Crear la estructura JSON final para los gráficos
+    # { "Total": { "fechas": [...], "IN": [...], "OUT": [...] }, "R1": { ... } }
+    datos_graficos_final = {}
+    
+    # Añadir el total
+    tiendas_disponibles_con_total = ["Total"] + tiendas_disponibles
+    
+    for tienda in tiendas_disponibles_con_total:
+        datos_IN = []
+        datos_OUT = []
+        for fecha in labels_fechas:
+            datos_IN.append(datos_diarios_por_tienda[tienda][fecha].get('IN', 0))
+            datos_OUT.append(datos_diarios_por_tienda[tienda][fecha].get('OUT', 0))
+        
+        datos_graficos_final[tienda] = {
+            "fechas": labels_fechas,
+            "IN": datos_IN,
+            "OUT": datos_OUT
+        }
+
+    # 3. Formatear datos para la tabla de agentes
     tabla_agentes_final = []
     for tienda, roles in agentes_data.items():
         agentes_ordenados = []
@@ -216,21 +241,22 @@ def process_data(raw_data):
             "agentes": agentes_ordenados
         })
     
-    # Ordenar tiendas (R1, R11, R2... y "No Asignado" al final)
     tabla_agentes_final.sort(key=lambda x: (
-        1 if x['tienda'] == "No Asignado" else 0, # "No Asignado" va al final
+        1 if x['tienda'] == "No Asignado" else 0,
         int(x['tienda'][1:]) if x['tienda'].startswith('R') and x['tienda'][1:].isdigit() else 99,
         x['tienda']
     ))
     
+    # 4. Compilar JSON final
     datos_finales = {
-        "direccion_data": direccion_data,
-        "agente_data": tabla_agentes_final
+        "resumen_acumulado": resumen_acumulado,
+        "tabla_agentes": tabla_agentes_final,
+        "tiendas_disponibles": tiendas_disponibles,
+        "datos_diarios_por_tienda": datos_graficos_final
     }
     
     print("\n--- JSON A ENVIAR (DEBUG) ---")
-    print(f"direccion_data keys: {list(datos_finales['direccion_data'].keys())}")
-    print(f"agente_data items: {len(datos_finales['agente_data'])}")
+    print(f"Tiendas disponibles: {tiendas_disponibles}")
     print("-----------------------------\n")
 
     return jsonify(datos_finales)
