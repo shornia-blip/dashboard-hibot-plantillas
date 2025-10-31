@@ -60,12 +60,52 @@
         }
 
         /* Contenedor de Gráfico y Tabla */
-        .chart-box, .table-container {
+        .chart-box, .table-container, .filter-container {
             background-color: #1f2937; /* Fondo de tarjeta */
             border-radius: 8px;
             padding: 20px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.1);
         }
+
+        /* --- NUEVO: Contenedor de Gráficos Diarios --- */
+        .charts-diarios-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        
+        /* --- NUEVO: Estilos de Filtros --- */
+        .filter-container {
+            padding-bottom: 25px;
+        }
+        .filter-container h3 {
+            margin-top: 0;
+            text-align: left;
+        }
+        .filter-container .botones-filtro {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .filter-container button {
+            background-color: #374151;
+            color: #e5e7eb;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .filter-container button:hover {
+            background-color: #4b5563;
+        }
+        .filter-container button.active {
+            background-color: #0d1bd4; /* Azul de Reino */
+            color: #ffffff;
+        }
+
 
         /* Estilos de la Tabla */
         .table-container {
@@ -104,6 +144,16 @@
             font-weight: bold;
             text-align: center;
         }
+
+        /* Media query para pantallas pequeñas */
+        @media (max-width: 900px) {
+            .stats-container {
+                grid-template-columns: 1fr;
+            }
+            .charts-diarios-container {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 <body>
@@ -127,13 +177,28 @@
             </div>
         </div>
 
-        <!-- 2. Gráfico de Barras Diario -->
-        <div class="chart-box">
-            <h3>Uso Diario (Conversaciones OUT)</h3>
-            <canvas id="graficoDiario"></canvas>
+        <!-- 2. Contenedor de Filtros -->
+        <div class="filter-container">
+            <h3>Filtar por Tienda</h3>
+            <div class="botones-filtro" id="filtros-container">
+                <button class="active" onclick="filtrarGraficos('Total', this)">Todos</button>
+                <!-- Botones de tiendas se cargarán aquí -->
+            </div>
+        </div>
+
+        <!-- 3. Gráficos de Barras Diarios -->
+        <div class="charts-diarios-container">
+            <div class="chart-box">
+                <h3>Uso Diario (Conversaciones OUT)</h3>
+                <canvas id="graficoDiarioOUT"></canvas>
+            </div>
+            <div class="chart-box">
+                <h3>Uso Diario (Conversaciones IN)</h3>
+                <canvas id="graficoDiarioIN"></canvas>
+            </div>
         </div>
         
-        <!-- 3. Tabla de Desglose por Agente -->
+        <!-- 4. Tabla de Desglose por Agente -->
         <div class="table-container">
             <h3>Desglose por Agente (Conversaciones 'OUT' - 30 días)</h3>
             <div id="tablaAgentes">
@@ -146,31 +211,27 @@
         // Registrar el plugin de etiquetas
         Chart.register(ChartDataLabels);
 
-        // Paleta de colores (Azul de Reino)
+        // Paleta de colores
         const COLOR_AZUL_REINO = '#0d1bd4';
+        const COLOR_GRIS = '#4b5563';
         const COLOR_TEXTO_GRAFICO = '#e5e7eb'; // Texto claro
 
         // Guardamos las instancias de los gráficos
-        let chartDiarioInstance = null;
+        let chartDiarioOUTInstance = null;
+        let chartDiarioINInstance = null;
         
-        // --- ¡CORRECCIÓN! ---
-        // URL absoluta al backend en Render.
-        // Esto soluciona el error 'Failed to parse URL' en la vista previa
-        // y también funciona cuando está desplegado.
-        const API_URL = 'https://dashboard-reino-backend.onrender.com/api/datos';
-        // ------------------
+        // Almacén global para los datos de los gráficos
+        let globalChartData = {};
 
+        // URL de la API (corregida)
+        const API_URL = '/api/datos'; // Usar ruta relativa
 
         // Función principal de JavaScript
         async function cargarDatos() {
             try {
-                // Llama a la API (ahora con la URL absoluta)
-                // Se autenticará con la ventana emergente del navegador
                 const response = await fetch(API_URL);
                 
                 if (!response.ok) {
-                    // Si el login (401) falla, el navegador lo maneja.
-                    // Esto es para errores 500, etc.
                     throw new Error(`Error del servidor: ${response.status} ${response.statusText}`);
                 }
                 
@@ -180,19 +241,28 @@
                     throw new Error("La respuesta del servidor está vacía o no es un JSON válido.");
                 }
 
-                // 1. Renderizar tarjetas (IN vs OUT)
-                if (data.direccion_data && data.direccion_data.acumulado) {
-                    renderizarTarjetas(data.direccion_data.acumulado);
+                // Almacenar datos globalmente
+                globalChartData = data.datos_diarios_por_tienda;
+
+                // 1. Renderizar tarjetas (Acumulado)
+                if (data.resumen_acumulado) {
+                    renderizarTarjetas(data.resumen_acumulado);
+                }
+                
+                // 2. Renderizar filtros
+                if (data.tiendas_disponibles) {
+                    renderizarFiltros(data.tiendas_disponibles);
                 }
 
-                // 2. Renderizar el gráfico diario
-                if (data.direccion_data && data.direccion_data.diario) {
-                    renderizarGraficoDiario(data.direccion_data.diario);
+                // 3. Renderizar gráficos (Vista "Total" por defecto)
+                if (globalChartData.Total) {
+                    renderizarGraficoDiarioOUT(globalChartData.Total);
+                    renderizarGraficoDiarioIN(globalChartData.Total);
                 }
 
-                // 3. Renderizar la tabla de agentes
-                if (data.agente_data) {
-                    renderizarTablaAgentes(data.agente_data);
+                // 4. Renderizar la tabla de agentes
+                if (data.tabla_agentes) {
+                    renderizarTablaAgentes(data.tabla_agentes);
                 }
 
             } catch (error) {
@@ -202,7 +272,7 @@
         }
 
         function renderizarTarjetas(data) {
-            // data = data.direccion_data.acumulado
+            // data = data.resumen_acumulado
             const container = document.getElementById('stats-cards');
             const total = data.conteo.reduce((a, b) => a + b, 0);
             
@@ -229,69 +299,159 @@
             `;
         }
 
-        function renderizarGraficoDiario(data) {
-            // data = data.direccion_data.diario
-            const ctx = document.getElementById('graficoDiario').getContext('2d');
+        function renderizarFiltros(tiendas) {
+            const container = document.getElementById('filtros-container');
+            // Empezar desde 1 para saltar el botón "Todos" que ya está en el HTML
+            let html = container.innerHTML; // Conservar el botón "Todos"
+            tiendas.forEach(tienda => {
+                // Filtrar "Supervisión" si no se quiere mostrar
+                if (tienda !== "Supervisión") {
+                     html += `<button onclick="filtrarGraficos('${tienda}', this)">${tienda}</button>`;
+                }
+            });
+            container.innerHTML = html;
+        }
+
+        // --- NUEVA FUNCIÓN DE FILTRADO ---
+        function filtrarGraficos(tienda, elementoBoton) {
+            // Actualizar clase activa en botones
+            const botones = document.querySelectorAll('.botones-filtro button');
+            botones.forEach(btn => btn.classList.remove('active'));
+            if (elementoBoton) {
+                elementoBoton.classList.add('active');
+            } else {
+                // Si se llama por defecto, activar el botón "Todos"
+                document.querySelector('.botones-filtro button').classList.add('active');
+            }
+
+            // Obtener datos filtrados
+            const data = globalChartData[tienda];
+            if (!data) {
+                console.error(`No se encontraron datos para la tienda: ${tienda}`);
+                return;
+            }
+
+            // Volver a dibujar ambos gráficos
+            renderizarGraficoDiarioOUT(data);
+            renderizarGraficoDiarioIN(data);
+        }
+
+        // --- GRÁFICO OUT (MODIFICADO) ---
+        function renderizarGraficoDiarioOUT(data) {
+            // data = globalChartData[tienda]
+            const ctx = document.getElementById('graficoDiarioOUT').getContext('2d');
             
-            if (chartDiarioInstance) {
-                chartDiarioInstance.destroy();
+            if (chartDiarioOUTInstance) {
+                chartDiarioOUTInstance.destroy(); // Destruir gráfico anterior
             }
             
-            // Extraer solo los datos de 'OUT'
-            const datosOUT = data.fechas.map(fecha => {
-                return data.datos[fecha] ? data.datos[fecha]['OUT'] || 0 : 0;
-            });
-            
-            chartDiarioInstance = new Chart(ctx, {
+            chartDiarioOUTInstance = new Chart(ctx, {
                 type: 'bar',
                 data: {
                     labels: data.fechas, // Eje X (fechas '29/10')
                     datasets: [
                         {
                             label: 'Conversaciones OUT',
-                            data: datosOUT,
+                            data: data.OUT, // Usar datos OUT
                             backgroundColor: COLOR_AZUL_REINO,
                             borderColor: COLOR_AZUL_REINO
                         }
                     ]
                 },
                 options: {
-                    aspectRatio: 3, // Proporción: 3 veces más ancho que alto
+                    aspectRatio: 2.5, // Más ancho que alto
                     responsive: true,
                     plugins: {
                         legend: {
-                            labels: { color: COLOR_TEXTO_GRAFICO } // Color de la leyenda
+                            labels: { color: COLOR_TEXTO_GRAFICO }
                         },
-                        datalabels: { // Configuración de etiquetas de datos
+                        datalabels: {
                             display: true,
                             color: COLOR_TEXTO_GRAFICO,
                             anchor: 'end',
                             align: 'top',
-                            formatter: (value) => (value > 0 ? value : ''), // No mostrar '0'
+                            formatter: (value) => (value > 0 ? value : ''),
                             font: { weight: 'bold' }
                         }
                     },
                     scales: {
                         x: {
                             ticks: {
-                                color: COLOR_TEXTO_GRAFICO, // Color de las fechas
-                                maxRotation: 60, // Rotar fechas
-                                minRotation: 60, // Rotar fechas
-                                autoSkip: true // Saltear fechas si se superponen
+                                color: COLOR_TEXTO_GRAFICO,
+                                maxRotation: 60,
+                                minRotation: 60,
+                                autoSkip: true
                             },
-                            grid: {
-                                color: '#374151' // Color de líneas de fondo
-                            }
+                            grid: { color: '#374151' }
                         },
                         y: {
                             beginAtZero: true,
                             ticks: {
-                                color: COLOR_TEXTO_GRAFICO, // Color del eje Y
-                                stepSize: 1 // Forzar números enteros (1, 2, 3...)
+                                color: COLOR_TEXTO_GRAFICO,
+                                stepSize: 1
                             },
-                            grid: {
-                                color: '#374151' // Color de líneas de fondo
-                            }
+                            grid: { color: '#374151' }
+                        }
+                    }
+                }
+            });
+        }
+
+        // --- NUEVO GRÁFICO IN ---
+        function renderizarGraficoDiarioIN(data) {
+            // data = globalChartData[tienda]
+            const ctx = document.getElementById('graficoDiarioIN').getContext('2d');
+            
+            if (chartDiarioINInstance) {
+                chartDiarioINInstance.destroy(); // Destruir gráfico anterior
+            }
+            
+            chartDiarioINInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: data.fechas, // Eje X (fechas '29/10')
+                    datasets: [
+                        {
+                            label: 'Conversaciones IN',
+                            data: data.IN, // Usar datos IN
+                            backgroundColor: COLOR_GRIS, // Color gris
+                            borderColor: COLOR_GRIS
+                        }
+                    ]
+                },
+                options: {
+                    aspectRatio: 2.5, // Más ancho que alto
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            labels: { color: COLOR_TEXTO_GRAFICO }
+                        },
+                        datalabels: {
+                            display: true,
+                            color: COLOR_TEXTO_GRAFICO,
+                            anchor: 'end',
+                            align: 'top',
+                            formatter: (value) => (value > 0 ? value : ''),
+                            font: { weight: 'bold' }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: {
+                                color: COLOR_TEXTO_GRAFICO,
+                                maxRotation: 60,
+                                minRotation: 60,
+                                autoSkip: true
+                            },
+                            grid: { color: '#374151' }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                color: COLOR_TEXTO_GRAFICO,
+                                stepSize: 5 // El StepSize puede ser mayor para IN
+                            },
+                            grid: { color: '#374151' }
                         }
                     }
                 }
@@ -299,7 +459,7 @@
         }
         
         function renderizarTablaAgentes(data) {
-            // data = data.agente_data
+            // data = data.tabla_agentes
             const container = document.getElementById('tablaAgentes');
             if (!data || data.length === 0) {
                 container.innerHTML = "<p>No se encontraron datos de agentes para conversaciones 'OUT'.</p>";
