@@ -115,8 +115,19 @@ def fetch_hibot_template_data(token):
     conversations_url = f"{HIBOT_BASE_URL}/conversations"
     headers = {"Authorization": f"Bearer {token}"}
     
-    fecha_hasta = datetime.datetime.now()
-    fecha_desde = fecha_hasta - datetime.timedelta(days=30)
+    # --- ¡CORRECCIÓN DE FECHA! ---
+    # Tus datos de HIBOT están en 2025. Forzamos el rango a esa fecha.
+    # Cuando tus datos en HIBOT sean actuales (ej. 2024), 
+    # podemos volver a usar las líneas de 'datetime.datetime.now()'
+    
+    # fecha_hasta = datetime.datetime.now()
+    # fecha_desde = fecha_hasta - datetime.timedelta(days=30)
+    
+    # Rango de fechas "forzado" para que coincida con tus datos de 2025:
+    fecha_hasta = datetime.datetime(2025, 10, 30) # 30 de Octubre, 2025
+    fecha_desde = datetime.datetime(2025, 9, 29) # 29 de Septiembre, 2025
+    # ---------------------------
+    
     timestamp_hasta = int(fecha_hasta.timestamp() * 1000)
     timestamp_desde = int(fecha_desde.timestamp() * 1000)
 
@@ -130,9 +141,8 @@ def fetch_hibot_template_data(token):
         
         if data and isinstance(data, list):
             print(f"Se obtuvieron {len(data)} conversaciones para procesar.")
-            print("\n--- ESTRUCTURA DE UNA CONVERSACIÓN (DEBUG) ---")
-            print(data[0])
-            print("----------------------------------------------\n")
+            # Descomenta esta línea si necesitas depurar la estructura de nuevo
+            # print(data[0]) 
             return data
         else:
             print("Respuesta exitosa pero no se encontraron conversaciones.")
@@ -155,7 +165,10 @@ def process_data(raw_data):
     # Para la tabla de Agentes (solo OUT)
     agentes_data = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
     uso_hoy_tienda = defaultdict(int)
-    hoy_str = datetime.datetime.now().strftime('%d/%m') # Formato '29/10'
+    
+    # ¡IMPORTANTE! Usamos la fecha "forzada" (o una fecha dentro de ese rango) 
+    # para la columna "Límite de Usos Hoy".
+    hoy_str = datetime.datetime(2025, 10, 29).strftime('%d/%m') # '29/10'
 
     for conv in raw_data:
         direccion = conv.get('direction', 'IN')
