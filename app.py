@@ -93,9 +93,16 @@ def fetch_hibot_template_data(token):
     conversations_url = f"{HIBOT_BASE_URL}/conversations"
     headers = {"Authorization": f"Bearer {token}"}
     
-    # Rango de fechas "forzado" para que coincida con tus datos de 2025:
-    fecha_hasta = datetime.datetime(2025, 10, 30)
-    fecha_desde = datetime.datetime(2025, 9, 29)
+    # --- ¡CORREGIDO! Rango de fechas dinámico para el MES EN CURSO ---
+    # Obtener la fecha y hora actual
+    ahora = datetime.datetime.now()
+    
+    # Calcular el primer día del mes actual a las 00:00
+    fecha_desde = ahora.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    
+    # La fecha "hasta" es simplemente ahora mismo, para tener los datos más recientes
+    fecha_hasta = ahora
+    # --- Fin de la corrección ---
     
     timestamp_hasta = int(fecha_hasta.timestamp() * 1000)
     timestamp_desde = int(fecha_desde.timestamp() * 1000)
@@ -132,8 +139,8 @@ def process_data(raw_data):
     tiendas_set = set()
     todas_las_fechas = set()
     
-    # Fecha de "hoy" (basada en tus datos de 2025)
-    hoy_str = datetime.datetime(2025, 10, 29).strftime('%d/%m')
+    # --- ¡CORREGIDO! Fecha de "hoy" dinámica ---
+    hoy_str = datetime.datetime.now().strftime('%d/%m')
 
     for conv in raw_data:
         direccion = conv.get('direction', 'IN')
@@ -290,4 +297,3 @@ if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))
     print(f"Iniciando servidor Flask en el puerto {port}")
     pass # Gunicorn llamará a 'app'
-
