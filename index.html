@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard de Plantillas WhatsApp</title>
-    <!-- 1. Importar Chart.js y el plugin de etiquetas -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
     
@@ -158,35 +157,29 @@
 </head>
 <body>
 
-    <h1>Tablero de control Uso Plantillas WhatsApp (HIBOT)</h1>
+    <h1>Dashboard de Uso de Plantillas (HIBOT)</h1>
 
     <div class="dashboard-container">
         
-        <!-- 1. Tarjetas de Estadísticas -->
         <div class="stats-container" id="stats-cards">
-            <!-- Los datos se cargarán aquí -->
             <div class="stat-card">
-                <h3>Conversaciones acumuladas (IN)</h3>
+                <h3>Conversaciones (IN)</h3>
                 <div class="value">0</div>
                 <div class="percentage">(0.0%)</div>
             </div>
             <div class="stat-card">
-                <h3>Conversaciones acumuladas (OUT)</h3>
+                <h3>Conversaciones (OUT)</h3>
                 <div class="value">0</div>
                 <div class="percentage">(0.0%)</div>
             </div>
         </div>
 
-        <!-- 2. Contenedor de Filtros -->
         <div class="filter-container">
             <h3>Filtar por Tienda</h3>
             <div class="botones-filtro" id="filtros-container">
-                <button class="active" onclick="filtrarGraficos('Total', this)">Todos</button>
-                <!-- Botones de tiendas se cargarán aquí -->
-            </div>
+                </div>
         </div>
 
-        <!-- 3. Gráficos de Barras Diarios -->
         <div class="charts-diarios-container">
             <div class="chart-box">
                 <h3>Uso Diario (Conversaciones OUT)</h3>
@@ -198,7 +191,6 @@
             </div>
         </div>
         
-        <!-- 4. Tabla de Desglose por Agente -->
         <div class="table-container">
             <h3>Desglose por Agente (Conversaciones 'OUT' - 30 días)</h3>
             <div id="tablaAgentes">
@@ -271,6 +263,7 @@
             }
         }
 
+        // --- ¡MODIFICADO! Nuevos títulos para las tarjetas ---
         function renderizarTarjetas(data) {
             // data = data.resumen_acumulado
             const container = document.getElementById('stats-cards');
@@ -287,28 +280,38 @@
 
             container.innerHTML = `
                 <div class="stat-card">
-                    <h3>Conversaciones (IN)</h3>
+                    <h3>Conversaciones acumuladas (IN)</h3>
                     <div class="value">${conteoIN.toLocaleString('es-AR')}</div>
                     <div class="percentage">(${porcIN}%)</div>
                 </div>
                 <div class="stat-card">
-                    <h3>Conversaciones (OUT)</h3>
+                    <h3>Conversaciones acumuladas (OUT)</h3>
                     <div class="value">${conteoOUT.toLocaleString('es-AR')}</div>
                     <div class="percentage">(${porcOUT}%)</div>
                 </div>
             `;
         }
 
+        // --- ¡MODIFICADO! Añade el botón "Todos" al final ---
         function renderizarFiltros(tiendas) {
             const container = document.getElementById('filtros-container');
-            // Empezar desde 1 para saltar el botón "Todos" que ya está en el HTML
-            let html = container.innerHTML; // Conservar el botón "Todos"
+            
+            // Empezar con un HTML vacío
+            let html = ''; 
+            
+            // 1. Añadir las tiendas (que ya vienen ordenadas desde Python)
             tiendas.forEach(tienda => {
-                // Filtrar "Supervisión" si no se quiere mostrar
-                if (tienda !== "Supervisión") {
-                     html += `<button onclick="filtrarGraficos('${tienda}', this)">${tienda}</button>`;
+                // 'tiendas_disponibles' ya viene filtrado desde Python,
+                // pero por seguridad no mostramos "Supervisión" si apareciera.
+                if (tienda !== "Supervisión") { 
+                    html += `<button onclick="filtrarGraficos('${tienda}', this)">${tienda}</button>`;
                 }
             });
+            
+            // 2. Añadir el botón "Todos" AL FINAL
+            // Se le pone 'active' por defecto, ya que es la vista inicial
+            html += `<button class="active" onclick="filtrarGraficos('Total', this)">Todos</button>`;
+
             container.innerHTML = html;
         }
 
@@ -530,5 +533,3 @@
 
 </body>
 </html>
-
-
