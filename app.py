@@ -73,6 +73,9 @@ def parse_agent_name(name):
 
     if name_upper == "MAITE":
         return "Jefe de Venta", "J", name # J = Jefe
+
+     if name_upper == "SANTIAGO":
+        return "DESARROLLO DIGITAL", "XD", name # XD = DD
     
     # --- LÓGICA ANTERIOR (para el resto) ---
     # Ya no se excluye a Camila/Franco aquí
@@ -323,3 +326,4 @@ if __name__ == '__main__':
     print(f"Iniciando servidor Flask en el puerto {port}")
     # Gunicorn llamará a 'app', esto es solo para debug local
     app.run(debug=True, port=port)
+
